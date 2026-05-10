@@ -1,0 +1,20 @@
+# RStudio
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+
+# Quarto
+/.quarto/
+*_files/
+*_cache/
+/site_libs/
+
+# Outputs renderizados (opcional: borrá estas líneas si querés versionarlos)
+*.html
+*.pdf
+
+# Sistema
+.DS_Store
+Thumbs.db

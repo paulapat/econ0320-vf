@@ -1,0 +1,235 @@
+---
+title: "PIB, tendencia e inflación"
+subtitle: "Econometría I — Universidad de Montevideo"
+author: "Tu nombre"
+date: today
+format:
+  html:
+    toc: true
+    toc-location: left
+    toc-depth: 2
+    number-sections: true
+    theme: cosmo
+    code-fold: false
+    code-tools: true
+    fig-width: 8
+    fig-height: 4.5
+    embed-resources: true
+lang: es
+execute:
+  warning: false
+  message: false
+---
+
+# Introducción
+
+Este documento muestra un análisis didáctico de la serie de PIB de Uruguay:
+visualización, estimación de tendencias y descomposición en componente
+tendencial y cíclico-irregular.
+
+# Carga de datos
+
+```{r}
+#| label: setup
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(here)
+
+df <- read_excel(here("data", "series.xlsx")) |>
+  mutate(año = as.numeric(año))
+
+glimpse(df)
+```
+
+# Visualización del PIB
+
+Serie original del PIB a precios constantes:
+
+```{r}
+#| label: fig-pib-cte
+#| fig-cap: "PIB a precios constantes (serie original)"
+ggplot(df, aes(x = año, y = pibcte)) +
+  geom_line(linewidth = 1) +
+  labs(title = "PIB a precios constantes",
+       x = "Año", y = "PIB real") +
+  theme_minimal(base_size = 13)
+```
+
+# Cambio de unidades
+
+Pasamos las series a **miles de millones** para que los ejes sean más
+legibles, y renombramos las variables.
+
+```{r}
+df <- df |>
+  mutate(
+    pibcte_mm  = pibcte  / 1e9,
+    pibcorr_mm = pibcorr / 1e9
+  ) |>
+  rename(
+    PIBcte    = pibcte_mm,
+    PIBcorr   = pibcorr_mm,
+    inflacion = inf,
+    desempleo = desemp
+  )
+```
+
+```{r}
+#| label: fig-pib-corr
+#| fig-cap: "PIB a precios corrientes (miles de millones)"
+ggplot(df, aes(x = año, y = PIBcorr)) +
+  geom_line(linewidth = 0.5) +
+  labs(title = "PIB a precios corrientes",
+       x = "Año", y = "PIB (miles de millones)") +
+  theme_minimal(base_size = 13)
+```
+
+# Tendencia temporal
+
+Creamos una variable de tiempo $t = \text{año} - 1960$ y estimamos
+$\text{PIB}_t = \beta_0 + \beta_1 t + u_t$.
+
+## Muestra completa
+
+```{r}
+df <- df |> mutate(t = año - 1960)
+
+reg_tend <- lm(PIBcte ~ t, data = df)
+summary(reg_tend)
+```
+
+## Submuestra desde 1982
+
+```{r}
+df_82 <- df |>
+  mutate(t2 = año - 1982) |>
+  filter(año >= 1982)
+
+reg_tend2 <- lm(PIBcte ~ t2, data = df_82)
+summary(reg_tend2)
+```
+
+# Regresión PIB ~ año
+
+```{r}
+reg_pib <- lm(PIBcte ~ año, data = df)
+summary(reg_pib)
+
+df$pib_trend <- predict(reg_pib)
+```
+
+```{r}
+#| label: fig-tendencia
+#| fig-cap: "PIB observado y tendencia lineal estimada"
+ggplot(df, aes(x = año)) +
+  geom_line(aes(y = PIBcte), linewidth = 0.5) +
+  geom_line(aes(y = pib_trend),
+            linetype = "dashed", linewidth = 0.5) +
+  labs(title = "PIB y tendencia lineal",
+       x = "Año", y = "PIB (miles de millones)") +
+  theme_minimal(base_size = 13)
+```
+
+# Regresiones con inflación
+
+## Inflación sola
+
+```{r}
+reg_inf1 <- lm(PIBcte ~ inflacion, data = df)
+summary(reg_inf1)
+```
+
+## Inflación controlando por tendencia
+
+```{r}
+reg_inf2 <- lm(PIBcte ~ inflacion + año, data = df)
+summary(reg_inf2)
+```
+
+## Modelo log-lineal (desde 1983)
+
+```{r}
+df_log <- df |>
+  mutate(logPIBcorr = log(PIBcorr)) |>
+  filter(año >= 1983)
+
+reg_log <- lm(logPIBcorr ~ inflacion + año, data = df_log)
+summary(reg_log)
+```
+
+# Tendencia lineal vs cuadrática
+
+Comparamos un ajuste lineal con uno cuadrático del PIB corriente,
+desde 1980.
+
+```{r}
+df_80 <- df |>
+  filter(año >= 1980) |>
+  mutate(año2 = año^2)
+
+reg_lineal_80 <- lm(PIBcorr ~ año, data = df_80)
+reg_cuad_80   <- lm(PIBcorr ~ año + año2, data = df_80)
+
+summary(reg_lineal_80)
+summary(reg_cuad_80)
+```
+
+```{r}
+df_80 <- df_80 |>
+  mutate(
+    Tendencia_lineal  = predict(reg_lineal_80),
+    Tendencia_orden_2 = predict(reg_cuad_80)
+  )
+```
+
+```{r}
+#| label: fig-cuadratica
+#| fig-cap: "PIB corriente: ajuste lineal vs cuadrático"
+ggplot(df_80, aes(x = año)) +
+  geom_line(aes(y = PIBcorr, color = "PBI"),
+            linewidth = 0.5, linetype = "dashed") +
+  geom_line(aes(y = Tendencia_lineal, color = "Tendencia lineal"),
+            linewidth = 0.5) +
+  geom_line(aes(y = Tendencia_orden_2, color = "Tendencia orden 2"),
+            linewidth = 0.5) +
+  labs(title = "PIB precios corrientes",
+       x = "Año", y = "PIB (miles de millones)", color = "") +
+  scale_color_manual(values = c(
+    "PBI" = "steelblue",
+    "Tendencia lineal" = "indianred4",
+    "Tendencia orden 2" = "#698B69"
+  )) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom",
+        plot.title = element_text(face = "bold"))
+```
+
+# Brecha del producto
+
+Estimamos $\log(\text{PIB}_t) = \beta_0 + \beta_1 \cdot \text{año}_t + u_t$
+y nos quedamos con los residuos. Como el modelo está en logs, los residuos
+se interpretan como desvíos porcentuales respecto a la tendencia.
+
+```{r}
+modelo_log <- lm(log(pibcte) ~ año, data = df)
+summary(modelo_log)
+
+df <- df |>
+  mutate(
+    log_tendencia = fitted(modelo_log),
+    ciclo_log     = residuals(modelo_log)
+  )
+```
+
+```{r}
+#| label: fig-brecha
+#| fig-cap: "Componente cíclico-irregular del PIB"
+ggplot(df, aes(x = año, y = ciclo_log * 100)) +
+  geom_line(linewidth = 1, color = "darkgreen") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
+  labs(title = "Componente cíclico-irregular",
+       subtitle = "Desvío porcentual del PIB respecto a su tendencia",
+       x = "Año", y = "Brecha (%)") +
+  theme_minimal(base_size = 13)
+```
